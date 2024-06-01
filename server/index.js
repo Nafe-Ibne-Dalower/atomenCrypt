@@ -59,7 +59,7 @@ const messageSchema = new mongoose.Schema({
 
 const Message = mongoose.model('Message', messageSchema);
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 10000;
 
 io.on('connection', (socket) => {
   console.log('A client connected');
