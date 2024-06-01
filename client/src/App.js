@@ -3,7 +3,7 @@ import {io} from "socket.io-client";
 import { BiSend } from "react-icons/bi";
 
 // Connect to the backend server
-const socket = io('http://localhost:4000/');
+const socket = io('https://atomencrypt.onrender.com/');
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
