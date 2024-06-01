@@ -1,69 +1,60 @@
 import React, { useState, useEffect, useRef } from "react";
-import io from "socket.io-client";
-import { BiMicrophone, BiPause, BiSend } from "react-icons/bi";
+import {io} from "socket.io-client";
+import { BiSend } from "react-icons/bi";
 
-const socket = io("http://192.168.0.106:4000");
+// Connect to the backend server
+const socket = io('http://localhost:4000/');
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState("");
+  const [previousMessages, setPreviousMessages] = useState([]);
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
-  const [showNotification, setShowNotification] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [audioURL, setAudioURL] = useState("");
-  const [previewAudioURL, setPreviewAudioURL] = useState("");
-  const audioRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    const handleNewMessage = (data) => {
+      setMessages((prevMessages) => [...prevMessages, data]);
+      playNotificationSound();
+    };
+
+    socket.on("message", handleNewMessage);
+
+    return () => {
+      socket.off("message", handleNewMessage);
+    };
+  }, []);
+
+  useEffect(() => {
+    socket.on("previousMessages", (previousMessages) => {
+      setPreviousMessages(previousMessages);
+    });
+
+    return () => {
+      socket.off("previousMessages");
+    };
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, previousMessages]);
+
+  // Function to play notification sound
+  const playNotificationSound = () => {
+    const audio = new Audio("/notification.mp3");
+    audio.play();
+  };
+
+  const handleLogin = () => {
+    if (username.trim() !== "") {
+      setIsLoggedIn(true);
       const timestamp = new Date().toLocaleString("en-US", {
         hour: "numeric",
         minute: "numeric",
         hour12: true,
       });
-      socket.emit("message", `${username} - ${timestamp} - Connected`);
-      socket.on("message", (data) => {
-        setMessages((prevMessages) => [...prevMessages, data]);
-        setShowNotification(true);
-      });
-      socket.on("voice_message", (audioData) => {
-        const audioBlob = new Blob([audioData], { type: "audio/wav" });
-        const audioURL = URL.createObjectURL(audioBlob);
-        setMessages((prevMessages) => [
-          ...prevMessages,
-          { audioURL, username, timestamp: new Date().toLocaleString() },
-        ]);
-        setPreviewAudioURL(audioURL);
-        setShowNotification(true);
-      });
-
-      return () => {
-        socket.off("message");
-        socket.off("voice_message");
-      };
-    }
-  }, [isLoggedIn]);
-
-  useEffect(() => {
-    if (showNotification) {
-      Notification.requestPermission().then((permission) => {
-        if (permission === "granted") {
-          new Notification("New message received!");
-        }
-      });
-      setShowNotification(false);
-    }
-  }, [showNotification]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const handleLogin = () => {
-    if (username.trim() !== "") {
-      setIsLoggedIn(true);
+      socket.emit("message", { username, timestamp, content: "Connected" });
     }
   };
 
@@ -74,13 +65,9 @@ function App() {
         minute: "numeric",
         hour12: true,
       });
-      socket.emit("message", `${username} - ${timestamp} - ${inputMessage}`);
+      socket.emit("message", { username, timestamp, content: inputMessage });
       setInputMessage("");
     }
-  };
-
-  const handleVoiceMessageSend = (audioData) => {
-    socket.emit("voice_message", audioData);
   };
 
   const handleKeyPress = (event) => {
@@ -91,41 +78,6 @@ function App() {
         handleMessageSend();
       }
     }
-  };
-
-  const startRecording = () => {
-    setRecording(true);
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        const mediaRecorder = new MediaRecorder(stream);
-        const audioChunks = [];
-
-        mediaRecorder.addEventListener("dataavailable", (event) => {
-          audioChunks.push(event.data);
-        });
-
-        mediaRecorder.addEventListener("stop", () => {
-          const audioBlob = new Blob(audioChunks);
-          const audioURL = URL.createObjectURL(audioBlob);
-          setAudioURL(audioURL);
-          handleVoiceMessageSend(audioBlob);
-          setRecording(false);
-        });
-
-        mediaRecorder.start();
-        setTimeout(() => {
-          mediaRecorder.stop();
-        }, 5000); // Stop recording after 5 seconds
-      })
-      .catch((error) => {
-        console.error("Error recording:", error);
-        setRecording(false);
-      });
-  };
-
-  const pauseRecording = () => {
-    // Pausing recording logic
   };
 
   return (
@@ -203,28 +155,44 @@ function App() {
               boxShadow: "0 0 10px rgba(0, 0, 0, 0.1)",
             }}
           >
+            {previousMessages.map((message, index) => (
+              <div key={index}>
+                <div
+                  style={{
+                    marginBottom: "10px",
+                    padding: "10px",
+                    backgroundColor: "#f0f0f0",
+                    borderRadius: "10px",
+                    maxWidth: "100%",
+                  }}
+                >
+                  <span style={{ fontWeight: "bold" }}>
+                    {message.username}
+                  </span>{" "}
+                  - {message.timestamp}
+                  <br />
+                  {message.content}
+                </div>
+              </div>
+            ))}
             {messages.map((message, index) => (
               <div key={index}>
-                {message.audioURL ? (
-                  <audio src={message.audioURL} controls />
-                ) : (
-                  <div
-                    style={{
-                      marginBottom: "10px",
-                      padding: "10px",
-                      backgroundColor: "#f0f0f0",
-                      borderRadius: "10px",
-                      maxWidth: "100%",
-                    }}
-                  >
-                    <span style={{ fontWeight: "bold" }}>
-                      {message.split(" - ")[0]}
-                    </span>{" "}
-                    - {message.split(" - ")[1]}
-                    <br />
-                    {message.split(" - ")[2]}
-                  </div>
-                )}
+                <div
+                  style={{
+                    marginBottom: "10px",
+                    padding: "10px",
+                    backgroundColor: "#D1E8FF",
+                    borderRadius: "10px",
+                    maxWidth: "100%",
+                  }}
+                >
+                  <span style={{ fontWeight: "bold" }}>
+                    {message.username}
+                  </span>{" "}
+                  - {message.timestamp}
+                  <br />
+                  {message.content}
+                </div>
               </div>
             ))}
             <div ref={messagesEndRef} />
@@ -264,86 +232,9 @@ function App() {
                 cursor: "pointer",
               }}
             >
-              <BiSend /> 
-            </button>
-            <button
-              onClick={recording ? pauseRecording : startRecording}
-              disabled={!isLoggedIn}
-              style={{
-                padding: "10px 20px",
-                fontSize: "16px",
-                backgroundColor: recording ? "#ff0000" : "#008000",
-                color: "#fff",
-                border: "none",
-                borderRadius: "5px",
-                cursor: "pointer",
-              }}
-            >
-              {recording ? <BiPause /> : <BiMicrophone />}
-              {recording ? "Pause Recording" : ""}
+              <BiSend />
             </button>
           </div>
-          {previewAudioURL && (
-            <div
-              style={{
-                position: "fixed",
-                top: "50%",
-                left: "50%",
-                transform: "translate(-50%, -50%)",
-                background: "#fff",
-                padding: "20px",
-                borderRadius: "10px",
-                boxShadow: "0 0 10px rgba(0, 0, 0, 0.1)",
-                zIndex: 9999,
-              }}
-            >
-              <audio src={previewAudioURL} controls />
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  marginTop: "10px",
-                }}
-              >
-                <button
-                  onClick={() => {
-                    setPreviewAudioURL("");
-                    setRecording(false);
-                  }}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "16px",
-                    backgroundColor: "#f00",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "5px",
-                    cursor: "pointer",
-                    marginRight: "10px",
-                  }}
-                >
-                  Pause Recording
-                </button>
-                <button
-                  onClick={() => {
-                    handleVoiceMessageSend(new Blob([])); // Send an empty blob as voice message
-                    setRecording(false);
-                    setPreviewAudioURL("");
-                  }}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "16px",
-                    backgroundColor: "#5300e2",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "5px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Send Recording
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
